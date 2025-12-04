@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: "2025-12-04"
+Description: "VPC-aprpal6791 spanning 3 AZs in us-west-2"
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: "VPC-aprpal6791"
+
+Resources:
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  # PUBLIC SUBNETS IN THREE AZs
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      AvailabilityZone: !Select [0, !GetAZs us-west-2]
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-Subnet-AZ1"
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      AvailabilityZone: !Select [1, !GetAZs us-west-2]
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-Subnet-AZ2"
+
+  PublicSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      AvailabilityZone: !Select [2, !GetAZs us-west-2]
+      CidrBlock: 10.0.3.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-Subnet-AZ3"
+
+Outputs:
+  VPCId:
+    Description: "ID of the created VPC"
+    Value: !Ref MyVPC
+
+  Subnet1:
+    Description: "Subnet in AZ1"
+    Value: !Ref PublicSubnet1
+
+  Subnet2:
+    Description: "Subnet in AZ2"
+    Value: !Ref PublicSubnet2
+
+  Subnet3:
+    Description: "Subnet in AZ3"
+    Value: !Ref PublicSubnet3
