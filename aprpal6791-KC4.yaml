@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Simple disaster recovery architecture using EC2, ALB, Auto Scaling, and S3 replication
+
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: EC2 KeyPair for SSH access
+
+  AMI:
+    Type: AWS::EC2::Image::Id
+    Description: Amazon Linux AMI ID for this region
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+
+  IsPrimaryRegion:
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+    Description: Set true in primary region, false in backup region
+
+  ReplicationDestinationBucket:
+    Type: String
+    Description: Name of S3 bucket in the backup region
+
+Conditions:
+  CreateReplication: !Equals [ !Ref IsPrimaryRegion, true ]
+
+Resources:
+
+  #### Security Group ####
+  InstanceSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP and SSH
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  #### Launch Template ####
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref AMI
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref KeyName
+        SecurityGroupIds:
+          - !Ref InstanceSG
+
+  #### Auto Scaling Group ####
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AvailabilityZones:
+        - !Select [0, !GetAZs '']
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: '1'
+      DesiredCapacity: '1'
+      MaxSize: '2'
+      TargetGroupARNs:
+        - !Ref TargetGroup
+
+  #### Load Balancer ####
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Subnets: !GetAZs ''
+      SecurityGroups:
+        - !Ref InstanceSG
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref "AWS::NoValue"
+      HealthCheckPath: /
+
+  #### S3 Bucket for Backups ####
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+
+  #### IAM Role for S3 Replication ####
+  ReplicationRole:
+    Condition: CreateReplication
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3ReplicationPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObjectVersion
+                  - s3:ReplicateObject
+                  - s3:ReplicateDelete
+                Resource: "*"
+
+Outputs:
+  LoadBalancerDNS:
+    Description: Public DNS of the Application Load Balancer
+    Value: !GetAtt LoadBalancer.DNSName
+
+  S3BucketName:
+    Description: S3 bucket used for backups
+    Value: !Ref BackupBucket
