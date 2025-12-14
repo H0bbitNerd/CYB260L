@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Minimal Highly Available E-Commerce Stack
+
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+
+  WebSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Web access
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  DBSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: DB access
+      VpcId: !Ref VPC
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets:
+        - !Ref PublicSubnet
+      SecurityGroups:
+        - !Ref WebSG
+
+  WebLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        InstanceType: t2.micro
+        ImageId: ami-0c02fb55956c7d316
+        KeyName: !Ref KeyName
+        SecurityGroupIds:
+          - !Ref WebSG
+
+  WebASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WebLaunchTemplate
+        Version: !GetAtt WebLaunchTemplate.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 2
+      DesiredCapacity: 1
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: mysql
+      DBInstanceClass: db.t3.micro
+      AllocatedStorage: 20
+      MasterUsername: admin
+      MasterUserPassword: Password123!
+      MultiAZ: true
+      BackupRetentionPeriod: 7
+      VPCSecurityGroups:
+        - !Ref DBSG
